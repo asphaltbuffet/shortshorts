@@ -95,13 +95,30 @@ func processLoop(ctx context.Context, ds chan [2]string, tsdb *timescalewrapper.
 	}
 }
 
-	receiveCount := 0
+func readConfig() string {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 
-	for receiveCount < num {
-		incoming := <-choke
-		logger.Info("received message", zap.String("topic", incoming[0]), zap.String("message", incoming[1]))
-		receiveCount++
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("reading config file: %w", err))
 	}
 
-	mqttwrapper.Close()
+	var sb strings.Builder
+
+	sb.WriteString("postgres://")
+	sb.WriteString(viper.GetString("timescale.user"))
+	sb.WriteString(":")
+	sb.WriteString(viper.GetString("timescale.password"))
+	sb.WriteString("@")
+	sb.WriteString(viper.GetString("timescale.host"))
+	sb.WriteString(":")
+	sb.WriteString(viper.GetString("timescale.port"))
+	sb.WriteString("/")
+	sb.WriteString(viper.GetString("timescale.database"))
+	sb.WriteString("?sslmode=")
+	sb.WriteString(viper.GetString("timescale.sslmode"))
+
+	return sb.String()
 }
