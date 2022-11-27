@@ -4,20 +4,28 @@ package servicemanager
 
 import (
 	"errors"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"go.uber.org/zap"
+
+	"github.com/asphaltbuffet/shortshorts/pkg/logging"
 )
 
-// ErrServiceCanceled is the error returned when the service is canceled.
-var ErrServiceCanceled = errors.New("service canceled")
+var (
+	// ErrServiceCanceled is the error returned when the service is canceled.
+	ErrServiceCanceled = errors.New("service canceled")
+	logger             *zap.Logger
+)
 
 // WaitShutdown waits until is going to die.
 func WaitShutdown(shutdown func()) {
+	logger = logging.GetLogger()
+
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	s := <-sigc
-	log.Printf("signal received [%v] canceling everything\n", s)
+	logger.Info("shutdown signal received, canceling everything", zap.String("signal", s.String()))
 	shutdown()
 }

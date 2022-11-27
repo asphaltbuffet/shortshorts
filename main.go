@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -61,7 +60,6 @@ func start(ctx context.Context) (*timescalewrapper.Database, chan [2]string, mqt
 func shutdown(cancel context.CancelFunc, tsdb *timescalewrapper.Database, mqttClient mqtt.Client) {
 	defer cancel()
 
-	logger := logging.GetLogger()
 	defer logging.Shutdown() //nolint:errcheck // We don't care about the error here.
 
 	mqttClient.Disconnect(MQTTDisconnectTimeout)
@@ -76,20 +74,20 @@ func processLoop(ctx context.Context, ds chan [2]string, tsdb *timescalewrapper.
 		case <-ctx.Done():
 			return
 		case d := <-ds:
-			fmt.Printf("RECEIVED: TOPIC: %s, MESSAGE: %s\n", d[0], d[1])
+			logger.Info("received sensor data", zap.String("topic", d[0]), zap.String("payload", d[1]))
 
 			var reading timescalewrapper.SensorData
 
 			err := json.Unmarshal([]byte(d[1]), &reading)
 			if err != nil {
-				fmt.Printf("ERROR: %s\n", err)
+				logger.Error("unmarshalling payload", zap.Error(err), zap.String("payload", d[1]))
 			}
 
-			fmt.Printf("unmarshalled: %+v\n", reading)
+			logger.Debug("unmarshalling payload", zap.Any("reading", reading))
 
 			err = tsdb.InsertData(reading)
 			if err != nil {
-				fmt.Printf("INSERTION ERROR: %s\n", err)
+				logger.Error("inserting data", zap.Error(err), zap.Any("reading", reading))
 			}
 		}
 	}
@@ -102,7 +100,7 @@ func readConfig() string {
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("reading config file: %w", err))
+		logger.Panic("reading config file", zap.Error(err))
 	}
 
 	var sb strings.Builder
