@@ -2,6 +2,7 @@
 package mqttwrapper
 
 import (
+	"context"
 	"fmt"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -9,10 +10,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var client mqtt.Client
-
 // Start starts the MQTT client. It should be called on the service start up.
-func Start() (chan [2]string, error) {
+func Start(ctx context.Context, datastream chan [2]string) (mqtt.Client, error) {
 	cfg := zap.NewProductionConfig()
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	logger, _ := cfg.Build()
@@ -48,35 +47,22 @@ func Start() (chan [2]string, error) {
 		logger.Error("connection lost", zap.Error(err))
 	})
 
-	// pulled from eclipse paho mqtt example
-	choke := make(chan [2]string)
-
-	options.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-		choke <- [2]string{msg.Topic(), string(msg.Payload())}
-	})
-
 	cli := mqtt.NewClient(options)
 	if token := cli.Connect(); token.Wait() && token.Error() != nil {
-		logger.Panic("error connecting to broker", zap.Error(token.Error()))
+		logger.Error("error connecting to broker", zap.Error(token.Error()))
+		return nil, token.Error()
 	}
 
-	if token := cli.Subscribe(topic, byte(qos), nil); token.Wait() && token.Error() != nil {
-		logger.Panic("error subscribing to topic", zap.Error(token.Error()))
+	f := func(client mqtt.Client, msg mqtt.Message) {
+		datastream <- [2]string{msg.Topic(), string(msg.Payload())}
 	}
 
-	fmt.Printf("Subscribed to topic %s\n", topic)
+	if token := cli.Subscribe(topic, byte(qos), f); token.Wait() && token.Error() != nil {
+		logger.Error("error subscribing to topic", zap.Error(token.Error()))
+		return nil, token.Error()
+	}
 
-	client = cli
+	logger.Info("successfully subscribed", zap.String("topic", topic), zap.String("broker", broker))
 
-	return choke, nil
-}
-
-// GetClient returns an MQTT client.
-func GetClient() (*mqtt.Client, error) {
-	return &client, nil
-}
-
-// Close disconnects the MQTT client.
-func Close() {
-	client.Disconnect(100) //nolint:gomnd // don't care about this right now
+	return cli, nil
 }
